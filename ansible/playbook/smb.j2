@@ -1,0 +1,12 @@
+[global]
+    workgroup = WORKGROUP
+    netbios name = cosecsrv
+    security = user
+    name resolve order = bcast lmhosts host wins
+[Daten]
+	comment = Daten
+	path =  /daten/smb
+	valid users = smb
+	guest ok = no
+	writable = yes
+	browsable = yes

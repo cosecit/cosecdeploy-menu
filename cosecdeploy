@@ -1,0 +1,332 @@
+#!/bin/bash
+##############################
+#  ___           _           #
+# |   \ ___ _ __| |___ _  _  # 
+# | |) / -_) '_ \ / _ \ || | #
+# |___/\___| .__/_\___/\_, | #
+#          |_|         |__/  #
+###########################pl#
+
+#--[ SETTINGS ]--------------------------------------------#
+CO_DEPL=ansible
+PLAYBOOK_PATH=/_it/$CO_DEPL/playbook
+LOG_PATH=/var/log/$CO_DEPL\_log
+stty -echoctl
+SSH_PW=
+
+#--[ CHECK ]-----------------------------------------------#
+chk() {
+	killall ssh-agent 2>/dev/null
+	if [[ $EUID -ne 0 ]]; then
+		echo "This script must be run as root" 1>&2
+		exit 1
+	fi
+}
+############################################################
+#--[ PLAYBOOKS ]-------------------------------------------#
+############################################################
+
+#--[ Update Menü ]---------------------------------------------#
+update(){
+        clear
+        echo "---------------------"
+        echo " 1. CoSec update"
+        echo " 2. Betriebssystem update (neustart erforderlich)"
+        echo "---------------------"
+        echo " q  Quit"
+        echo
+        local choice
+        read -p "Enter choice [ 1 - 2 ] " choice
+        case $choice in
+                2) os_update ;;
+                1) cosec_update ;;
+                q) print_menu ;;
+                *) echo -e "${RED}Error: Invalid Input${STD}" && sleep 1
+        esac
+}
+
+os_update(){
+        clear
+        echo "--[ Betriebssystem update ]--"
+        dnf update -y
+        echo "Update Complete please reboot the system" && sleep 1
+        pause
+        update
+}
+
+cosec_update(){
+        echo "--[ CoSec Update ]--"
+        rm -R -f /_it/ansible/playbook/
+        wget http://130.61.250.134/site/daten/script/ansible/playbook/OPNsense.yml -P /_it/ansible/playbook
+        wget http://130.61.250.134/site/daten/script/ansible/playbook/smb.j2 -P /_it/ansible/playbook
+        rm -R -f /usr/local/sbin/cosecdeploy
+        wget http://130.61.250.134/site/daten/script/cosecdeploy -P /usr/local/sbin 
+        chmod +x /usr/local/sbin/cosecdeploy
+        wget http://130.61.250.134/site/daten/script/ansible/playbook/microk8s.yml -P /_it/ansible/playbook
+        pause
+        update
+}
+#--[ VPN ]-------------------------------------------------#
+vpn_menu(){
+	clear
+	echo "---------------------"
+	echo " 1. OpenVPN connect"
+	echo " 2. OpenVPN disconnect"
+	echo "---------------------"
+	echo " q  Quit"
+	echo 
+	local choice
+	read -p "Enter choice [ 1 - 2 ] " choice
+	case $choice in
+		1) vpn_on ;;
+		2) vpn_off ;;
+		q) print_menu ;;
+		*) echo -e "${RED}Error: Invalid Input${STD}" && sleep 1
+	esac
+}
+
+vpn_on(){
+	clear
+	echo "--[ OpenVPN Einwahl ]--"
+	systemctl start openvpn-client@vpn	
+	pause
+	vpn_menu
+}
+
+vpn_off(){
+	clear
+	echo "--[ OpenVPN Disconnect ]--"
+	systemctl stop openvpn-client@vpn	
+	pause
+	vpn_menu
+}
+
+#--[ OPNsense Install ]-----------------------------------#
+vw_setup(){
+	echo "--[ OPNSense Setup ]--"
+	ansible-playbook $PLAYBOOK_PATH/OPNsense.yml 
+	pause
+}
+
+#--[ k8s Setup ]------------------------------------------#
+k8s_setup(){
+	echo "--[ microk8s Setup ]--"
+        ansible-playbook $PLAYBOOK_PATH/microk8s.yml
+        pause
+}
+
+#--[ UTILITIES ]-------------------------------------------#
+utilities_menu(){
+	clear
+	echo "---------------------"
+	echo " 1. Yum Update"
+	echo " 2. Shell Command"
+	echo " 3. ------"
+	echo " 4. ------"
+	echo " 5. Partition Menu"
+	echo "---------------------"
+	echo " q  Quit"
+	echo 
+	local choice
+	read -p "Enter choice [ 1 - 4 ] " choice
+	case $choice in
+		1) yum_update ;;
+		2) shell_cmd ;;
+		3) snmp_conf ;;
+		4) xxx_setup ;;
+		5) part_menu ;;
+		q) print_menu ;;
+		*) echo -e "${RED}Error: Invalid Input${STD}" && sleep 1
+	esac
+}
+
+yum_update(){
+	sshagent
+	echo "--[ Yum Update ]--"
+	echo -n "Enter target IP/Group (Or 'all') and press [ENTER]: "
+	read YUM_TARGET_IP
+	if [ -z $YUM_TARGET_IP ]; then
+		echo "One or more variables are invalid or undefined" && sleep 1
+		cont
+	fi
+	ANSIBLE_LOG_PATH="$LOG_PATH/yum_update.log" ansible-playbook $PLAYBOOK_PATH/yum/yum_update.yml -e "yum_target=$YUM_TARGET_IP"
+	pause
+}
+
+shell_cmd(){
+	sshagent
+	echo "--[ Shell Command ]--"
+	echo -n "Enter shell command target IP/Group (Or 'all') and press [ENTER]: "
+	read SHELL_TARGET_IP
+	echo -n "Enter Shell Command (e.g. 'yum install httpd -y') and press [ENTER]: "
+	read SHELL_COMMAND
+	if [ -z $SHELL_TARGET_IP ] || [ -z $SHELL_COMMAND ]; then
+		echo "One or more variables are invalid or undefined" && sleep 1
+		cont
+	fi
+	ANSIBLE_LOG_PATH="$LOG_PATH/shell_command.log" ansible $SHELL_TARGET_IP -m shell -a "$SHELL_COMMAND"
+	pause
+}
+
+snmp_conf(){
+	sshagent
+	echo "--[ SNMP Setup ]--"
+	echo -n "Enter snmp config target IP/Group (Or 'all') and press [ENTER]: "
+	read SNMP_TARGET_IP
+	echo "Edit snmpd.conf Settings and distribute"
+	pause
+	vi /etc/snmp/snmpd.conf
+	ANSIBLE_LOG_PATH="$LOG_PATH/snmp_setup.log" ansible-playbook  $PLAYBOOK_PATH/snmp/snmp_setup.yml -e "snmp_conf_target=$SNMP_TARGET_IP src=/etc/snmp/snmpd.conf"
+	pause
+}
+
+xxx_setup(){
+	sshagent
+	echo "--[ xxx Setup ]--"
+	echo -n "Enter Server IP and press [ENTER]: "
+	pause
+}
+
+part_menu(){
+	clear
+	echo "---------------------"
+	echo " 1. List Partitions"
+	echo " 2. Add Partition"
+	echo " 3. Delete Partition"
+	echo "---------------------"
+	echo " q  Quit"
+	echo 
+	local choice
+	read -p "Enter choice [ 1 - 3 ] " choice
+	case $choice in
+		1) part_list ;;
+		2) part_add ;;
+		3) part_del ;;
+		q) print_menu ;;
+		*) echo -e "${RED}Error: Invalid Input${STD}" && sleep 1
+	esac
+}
+
+part_list(){
+	sshagent
+	echo "--[ List Partitions ]--"
+	echo -n "Enter target IP/Group (Or 'all') and press [ENTER]: "
+	read PART_LIST_IP
+	if [ -z $PART_LIST_IP ]; then
+		echo "One or more variables are invalid or undefined" && sleep 1
+		cont
+	fi
+	ANSIBLE_LOG_PATH="$LOG_PATH/partition.log" ansible-playbook $PLAYBOOK_PATH/partition/part_list.yml -e "part_list_ip=$PART_LIST_IP"
+	pause
+	part_menu
+}
+
+part_add(){
+	sshagent
+	echo "--[ Create Partition ]--"
+	echo -n "Enter target IP and press [ENTER]: "
+	read PART_ADD_IP
+	if [ -z $PART_ADD_IP ]; then
+		echo "One or more variables are invalid or undefined" && sleep 1
+		cont
+	fi
+	ANSIBLE_LOG_PATH="$LOG_PATH/partition.log" ansible-playbook $PLAYBOOK_PATH/partition/part_list.yml -e "part_list_ip=$PART_ADD_IP"
+	echo "--"
+	echo -n "Enter new partition name (e.g. 'sdb1') and press [ENTER]: "
+	read PART_ADD_PART
+	echo -n "Enter new partition size in GB (e.g. '20') and press [ENTER]: "
+	read PART_ADD_SIZE
+	echo -n "Enter new mount point (e.g. '/u03') and press [ENTER]: "
+	read PART_ADD_MNTPOINT
+	if [ -z $PART_ADD_PART ] || [ -z  $PART_ADD_SIZE ] || [ -z  $PART_ADD_MNTPOINT ]; then
+		echo "One or more variables are invalid or undefined" && sleep 1
+		cont
+	fi
+	PART_ADD_NAME=$(grep -Eo '[[:alpha:]]+' <<<"$PART_ADD_PART")
+	PART_ADD_NUMBER=$(grep -Eo '[0-9]+' <<<"$PART_ADD_PART")
+
+	ANSIBLE_LOG_PATH="$LOG_PATH/partition.log" ansible-playbook $PLAYBOOK_PATH/partition/part_add.yml -e "part_add_ip=$PART_ADD_IP part_add_name=/dev/$PART_ADD_NAME part_add_number=$PART_ADD_NUMBER part_add_mntpoint=$PART_ADD_MNTPOINT part_add_size=$PART_ADD_SIZE"
+	pause
+	part_menu
+}
+
+part_del(){
+	sshagent
+	echo "--[ Delete Partition ]--"
+	echo -n "Enter target IP and press [ENTER]: "
+	read PART_DEL_IP
+	if [ -z $PART_DEL_IP ]; then
+		echo "One or more variables are invalid or undefined" && sleep 1
+		cont
+	fi
+	ANSIBLE_LOG_PATH="$LOG_PATH/partition.log" ansible-playbook $PLAYBOOK_PATH/partition/part_list.yml -e "part_list_ip=$PART_DEL_IP"
+
+	echo -n "Enter target Partition (e.g. 'sdb1') and press [ENTER]: "
+	read PART_DEL_PART
+	if [ -z $PART_DEL_PART ]; then
+		echo "One or more variables are invalid or undefined" && sleep 1
+		cont
+	fi
+	PART_DEL_NAME=$(grep -Eo '[[:alpha:]]+' <<<"$PART_DEL_PART")
+	PART_DEL_NUMBER=$(grep -Eo '[0-9]+' <<<"$PART_DEL_PART")
+	
+	ANSIBLE_LOG_PATH="$LOG_PATH/partition.log" ansible-playbook $PLAYBOOK_PATH/partition/part_del.yml -e "part_del_ip=$PART_DEL_IP part_del_name=/dev/$PART_DEL_NAME part_del_number=$PART_DEL_NUMBER"
+	pause
+	part_menu
+}
+
+############################################################
+#--[ RUN ]-------------------------------------------------#
+############################################################
+print_menu() {
+	clear
+	echo "---------------------"	
+	echo " C o S e c  - D E P L O Y "
+	echo "---------------------"
+	echo " u. update System"
+	echo "- - - - - - - - - - -"
+#	echo " 1. Linux Password Setup"
+	echo " 1. VPN (CoSecIT Remoteunterstützung)"
+	echo " 2. Install OPNsense"
+	echo " 3. Install Kubernetes"
+#	echo " 5. Samba Setup"
+#	echo "- - - - - - - - - - -"
+#	echo " 6. Repo Menu"
+#	echo " 7. Syslog Menu"
+	echo "- - - - - - - - - - -"
+	echo " 8. Utilities Menu"
+	echo "---------------------"
+	echo " q.  Quit"
+	echo 
+}
+
+print_opts(){
+	local choice
+	read -p "Enter choice [ 1 - 8 ] " choice
+	case $choice in
+		u) update ;;
+		4) change_pw ;;
+		1) vpn_menu ;;
+		2) vw_setup ;;
+		3) k8s_setup ;;
+		5) samba_setup ;;
+		6) repo_menu ;;
+		7) syslog_menu ;;
+		8) utilities_menu ;;
+		q) clear; exit 0 ;;
+		*) echo -e "${RED}Error: Invalid Input${STD}" && sleep 1
+	esac
+}
+
+cont(){
+	continue
+}
+
+trap 'cont' SIGINT SIGQUIT SIGTSTP
+
+chk
+
+while :; do
+	print_menu
+	print_opts
+done

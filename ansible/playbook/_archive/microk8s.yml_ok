@@ -1,0 +1,62 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+
+  tasks:
+    - name: Install snapd
+      package:
+        name: snapd
+        state: present
+
+    - name: autostart snapd
+      systemd:
+        name: snapd
+        enabled: yes 
+
+    - name: set snap link
+      file: 
+        src: /var/lib/snapd/snap
+        dest: /snap
+        state: link
+
+    - name: restart snapd
+      service:
+        name: snapd
+        state: restarted 
+
+    - name: Installation microk8s K8S Stack
+      snap:
+        name: microk8s
+        classic: yes
+
+    - name: install microk8s Storage Module
+      shell: LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/lib64" /var/lib/snapd/snap/bin/microk8s.enable storage
+
+    - name: install microk8s dns dashboard ingress module
+      shell: /var/lib/snapd/snap/bin/microk8s.enable dns dashboard ingress
+      args:
+        executable: /bin/bash
+
+    - name: change K8S Pods home 
+      file: 
+        path: /var/snap/microk8s/common/default-storage
+        state: absent
+
+    - name: chown
+      file:
+        path: ~/.kube
+        owner: admin
+
+    - name: Add user admin to microk8s group
+      shell: usermod -a -G microk8s admin
+
+    - name: create link
+      file:
+        src: /daten/pods/pvc
+        dest: /var/snap/microk8s/common/default-storage
+        state: link
+
+    - name: alias kubectlinstall 
+      shell: snap alias microk8s.kubectl kubectl
+      args:
+        executable: /bin/bash

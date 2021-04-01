@@ -1,0 +1,102 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+
+  tasks:
+    - name: Install snapd
+      package:
+        name: snapd
+        state: present
+
+    - name: autostart snapd
+      systemd:
+        name: snapd
+        enabled: yes 
+
+    - name: set snap link
+      file: 
+        src: /var/lib/snapd/snap
+        dest: /snap
+        state: link
+
+    - name: restart snapd
+      service:
+        name: snapd
+        state: restarted 
+
+    - name: install openshift shell
+      pip:
+        name: openshift
+        executable: pip3
+
+    - name: Installation microk8s K8S Stack
+      shell: snap install microk8s --classic
+      retries: 3
+      delay: 20
+
+    - name: install microk8s Storage Module
+      shell: LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/lib64" /var/lib/snapd/snap/bin/microk8s.enable storage
+
+    - name: install microk8s dns dashboard ingress module
+      shell: /var/lib/snapd/snap/bin/microk8s.enable dns dashboard ingress
+      args:
+        executable: /bin/bash
+
+    - name: change K8S Pods home 
+      file: 
+        path: /var/snap/microk8s/common/default-storage
+        state: absent
+
+    - name: chown
+      file:
+        path: ~/.kube
+        owner: admin
+
+    - name: Add user admin to microk8s group
+      shell: usermod -a -G microk8s admin
+
+    - name: Create a directory if it does not exist
+      file:
+        path: /daten/pods/pvc
+        state: directory
+        mode: '0755'
+
+    - name: create link
+      file:
+        src: /daten/pods/pvc
+        dest: /var/snap/microk8s/common/default-storage
+        state: link
+
+    - name: alias kubectlinstall 
+      shell: snap alias microk8s.kubectl kubectl
+      args:
+        executable: /bin/bash
+
+    - name: link kubeconfig
+      file:
+        src: /var/snap/microk8s/current/credentials/client.config
+        dest: ${HOME}/.kube/config
+        state: link
+
+    - name: set kubernetes-dashboard connect to NodePort
+      k8s:
+        state: present
+        definition:
+          apiVErsion: v1
+          kind: service
+          metadata:
+            name: kubernetes-dashboard
+            namespace: kube-system
+          spec:
+            type: NodePort
+            ports:
+            - port: 443
+              protocol: TCP
+              nodePort: 30111
+   
+    - name: Your kubernetes login token is stored in /daten/pods/ks-token.txt - you can connect to https://cosecsrv:30111
+      shell: /var/lib/snapd/snap/bin/kubectl -n kube-system describe secret $(/var/lib/snapd/snap/bin/kubectl -n kube-system get secret | awk '/^deployment-controller-token-/{print $1}') | awk '$1=="token:"{print $2}' > /daten/pods/ks-token.txt 
+      args:
+        executable: /bin/bash
+
+    - pause:

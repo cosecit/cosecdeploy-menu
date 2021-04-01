@@ -1,0 +1,41 @@
+---
+- hosts: localhost
+  connection: local
+
+  tasks:
+    - name: "install_required_packages"
+      yum: name={{item}} state=present
+      with_items:
+        - samba
+        - samba-client
+        - samba-common
+
+    - name: "create_smb_group"
+      group: name={{smb_grp}} state=present
+
+    - name: "create_smb_user"
+      user: name={{smb_usr}} groups={{smb_grp}} createhome=false shell=/bin/false comment=EF-SMB-User password={{smb_pwd}}
+
+    - name: "create_samba_user"
+      shell: (echo "{{smb_pwd}}"; sleep 1; echo "{{smb_pwd}}" ) | sudo smbpasswd -s -a {{smb_usr}}
+
+    - name: "change owner"
+      file:
+        path: /daten/smb
+        owner: smb
+        group: smb
+
+    - name: "copy_smb_conf"
+      template: src=/_it/ansible/playbook/smb.j2 dest=/etc/samba/smb.conf
+
+    - name: "enable_smb_service"
+      service: name=smb state=restarted enabled=yes
+
+    - name: "enable_nmb_service"
+      service: name=nmb state=restarted enabled=yes
+
+    - name: "Enable Samba on Firewall"
+      firewalld:
+        service: samba
+        permanent: yes
+        state: reload
