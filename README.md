@@ -1,10 +1,9 @@
 # cosecdeploy-menu
- Cosecdeploy is a script to install modules and makes config tasks easyer
+#### Cosecdeploy is a script to install modules and makes config tasks easyer
  
- cosecdeploy
- Features:
-  Update system
-  Update cosedeploy Features
-  VPN Remoteunterstütung
-  Install OPNsense Firewall
-  Install Kubernetes 
+###### cosecdeploy Features: <br>
+ - Update system <br>
+ - Update cosedeploy Features <br>
+ - VPN Remoteunterstütung <br>
+ - Install OPNsense Firewall <br>
+ - Install Kubernetes <br>
